@@ -4,20 +4,25 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-<meta name="theme-color" content="#111118">
+<meta name="theme-color" content="#101016">
 <title>IPA Manager</title>
 <style>
 *{box-sizing:border-box}
-body{margin:0;padding:24px 18px;padding-top:max(24px,env(safe-area-inset-top));background:#111118;color:#f5f5fa;font:16px -apple-system,BlinkMacSystemFont,sans-serif}
-main{max-width:600px;margin:auto}
-h1{font-size:29px}
-.muted{color:#aaaabb;overflow-wrap:anywhere}
-.panel{border:1px solid #353543;border-radius:18px;padding:18px;margin-top:22px;background:#1b1b25}
-.picker,button{display:block;width:100%;border:0;border-radius:12px;padding:14px;background:#8b7cff;color:#111118;font-weight:700;text-align:center;font-size:16px;cursor:pointer;margin-top:10px}
+body{margin:0;padding:24px 18px;padding-top:max(24px,env(safe-area-inset-top));background:#101016;color:#f5f5fa;font:16px -apple-system,BlinkMacSystemFont,sans-serif}
+main{max-width:650px;margin:auto}
+h1{font-size:30px;margin-bottom:5px}
+h2{font-size:20px}
+.muted{color:#a5a5b7;overflow-wrap:anywhere}
+.panel{border:1px solid #353543;border-radius:18px;padding:18px;margin-top:20px;background:#1b1b25}
+.picker,button{display:block;width:100%;border:0;border-radius:12px;padding:14px;background:#8b7cff;color:#111118;font-weight:700;text-align:center;font-size:15px;cursor:pointer;margin-top:10px}
 #files{display:none}
-.item{border-top:1px solid #353543;padding:16px 0;overflow-wrap:anywhere}
-.item button.secondary{background:#343442;color:white}
-.metadata{font-size:14px;line-height:1.6;overflow-wrap:anywhere}
+.card{display:flex;gap:13px;align-items:flex-start;padding:16px 0;border-top:1px solid #353543}
+.appicon{width:68px;height:68px;flex-shrink:0;object-fit:contain;border-radius:15px;background:#292936}
+.info{min-width:0;flex:1}
+.name{font-weight:700;overflow-wrap:anywhere}
+.details{font-size:13px;line-height:1.7;color:#aaaabd;overflow-wrap:anywhere;margin-top:6px}
+.actions{display:flex;flex-wrap:wrap;gap:7px;margin-top:10px}
+.actions button{width:auto;flex:1;min-width:100px;margin:0;padding:10px;background:#353543;color:white}
 #status{color:#c8c1ff;overflow-wrap:anywhere}
 </style>
 <script src="https://cdn.jsdelivr.net/npm/jszip@3.10.1/dist/jszip.min.js"></script>
@@ -25,14 +30,14 @@ h1{font-size:29px}
 <body>
 <main>
 <h1>IPA Manager</h1>
-<p class="muted">Tu biblioteca de aplicaciones iOS</p>
+<p class="muted">Tu biblioteca personal de aplicaciones iOS</p>
 
 <section class="panel">
-<h2>Importar IPA</h2>
-<p class="muted">Selecciona archivos desde Archivos de iOS.</p>
-<label class="picker" for="files">＋ Seleccionar archivos</label>
+<h2>＋ Importar aplicaciones</h2>
+<p class="muted">Selecciona archivos IPA desde Archivos de iOS.</p>
+<label class="picker" for="files">Seleccionar archivos IPA</label>
 <input id="files" type="file" accept=".ipa,application/octet-stream" multiple>
-<p id="status" role="status">Iniciando…</p>
+<p id="status" role="status">Iniciando biblioteca…</p>
 </section>
 
 <section class="panel">
@@ -44,9 +49,6 @@ h1{font-size:29px}
 
 <script>
 const $=id=>document.getElementById(id);
-const picker=$('files');
-const library=$('library');
-const status=$('status');
 let db;
 
 function openDB(){
@@ -61,15 +63,19 @@ function openDB(){
  });
 }
 
-function requestResult(request){
+function req(r){
  return new Promise((resolve,reject)=>{
-  request.onsuccess=()=>resolve(request.result);
-  request.onerror=()=>reject(request.error);
+  r.onsuccess=()=>resolve(r.result);
+  r.onerror=()=>reject(r.error);
  });
 }
 
 function getAll(){
- return requestResult(db.transaction('ipas','readonly').objectStore('ipas').getAll());
+ return req(db.transaction('ipas','readonly').objectStore('ipas').getAll());
+}
+
+function getOne(id){
+ return req(db.transaction('ipas','readonly').objectStore('ipas').get(id));
 }
 
 function save(item){
@@ -91,155 +97,210 @@ function remove(id){
  });
 }
 
-function sizeText(n){
+function fmt(n){
  return n<1048576?(n/1024).toFixed(1)+' KB':(n/1048576).toFixed(2)+' MB';
 }
 
-function plistValue(dict,key){
- const keys=[...dict.querySelectorAll(':scope > key')];
- for(const k of keys){
-  if(k.textContent===key){
-   const v=k.nextElementSibling;
-   if(!v)return '';
-   if(v.tagName==='string'||v.tagName==='integer')return v.textContent;
-   return '';
+function childValue(dict,key){
+ if(!dict)return null;
+ const children=Array.from(dict.children);
+ for(let i=0;i<children.length;i++){
+  if(children[i].tagName==='key'&&children[i].textContent===key){
+   return children[i+1]||null;
   }
  }
+ return null;
+}
+
+function plistString(dict,key){
+ const node=childValue(dict,key);
+ if(node&&['string','integer','real'].includes(node.tagName))return node.textContent;
  return '';
 }
 
+function iconNames(dict){
+ const names=[];
+ const files=childValue(dict,'CFBundleIconFiles');
+ if(files&&files.tagName==='array'){
+  for(const n of files.children){
+   if(n.tagName==='string')names.push(n.textContent);
+  }
+ }
+ const primary=childValue(dict,'CFBundlePrimaryIcon');
+ if(primary&&primary.tagName==='dict'){
+  const nested=childValue(primary,'CFBundleIconFiles');
+  if(nested&&nested.tagName==='array'){
+   for(const n of nested.children){
+    if(n.tagName==='string')names.push(n.textContent);
+   }
+  }
+ }
+ return [...new Set(names)];
+}
+
 async function analyze(file){
- if(!window.JSZip)throw new Error('No se pudo cargar el lector ZIP. Comprueba tu conexión.');
+ if(!window.JSZip)throw Error('No se pudo cargar JSZip. Comprueba tu conexión.');
 
  const zip=await JSZip.loadAsync(file);
- const path=Object.keys(zip.files).find(p=>
-  /^Payload\/[^/]+\.app\/Info\.plist$/i.test(p) && !zip.files[p].dir
- );
+ const paths=Object.keys(zip.files);
+ const infoPath=paths.find(p=>/^Payload\/[^/]+\.app\/Info\.plist$/i.test(p)&&!zip.files[p].dir);
+ if(!infoPath)throw Error('No se encontró Info.plist dentro de Payload.');
 
- if(!path)throw new Error('No se encontró Payload/Nombre.app/Info.plist.');
-
- const entry=zip.file(path);
- const bytes=await entry.async('uint8array');
+ const appDir=infoPath.slice(0,infoPath.lastIndexOf('/')+1);
+ const bytes=await zip.file(infoPath).async('uint8array');
 
  if(bytes[0]===0x62&&bytes[1]===0x70&&bytes[2]===0x6c&&bytes[3]===0x69){
-  throw new Error('Info.plist usa formato binario. Necesitamos añadir un lector binario en la siguiente versión.');
+  throw Error('Info.plist binario: todavía no compatible.');
  }
 
- const xml=new TextDecoder().decode(bytes);
- const doc=new DOMParser().parseFromString(xml,'application/xml');
-
- if(doc.querySelector('parsererror'))throw new Error('No se pudo interpretar Info.plist como XML.');
-
+ const doc=new DOMParser().parseFromString(new TextDecoder().decode(bytes),'application/xml');
+ if(doc.querySelector('parsererror'))throw Error('Info.plist XML no válido.');
  const dict=doc.querySelector('plist > dict');
- if(!dict)throw new Error('Info.plist no contiene un diccionario válido.');
+ if(!dict)throw Error('No se encontró el diccionario de Info.plist.');
 
  const metadata={
-  appName:plistValue(dict,'CFBundleDisplayName')||plistValue(dict,'CFBundleName')||path.split('/')[1],
-  version:plistValue(dict,'CFBundleShortVersionString')||'No indicada',
-  build:plistValue(dict,'CFBundleVersion')||'No indicado',
-  bundleId:plistValue(dict,'CFBundleIdentifier')||'No indicado'
+  appName:plistString(dict,'CFBundleDisplayName')||plistString(dict,'CFBundleName')||'Aplicación iOS',
+  version:plistString(dict,'CFBundleShortVersionString')||'Desconocida',
+  build:plistString(dict,'CFBundleVersion')||'Desconocido',
+  bundleId:plistString(dict,'CFBundleIdentifier')||'Desconocido',
+  iconData:null,
+  iconNote:'Icono no disponible'
  };
+
+ const names=iconNames(dict);
+ const pngs=paths.filter(p=>
+  !zip.files[p].dir &&
+  p.startsWith(appDir) &&
+  /\.png$/i.test(p)
+ );
+
+ let candidates=[];
+ for(const name of names){
+  const base=name.split('/').pop();
+  candidates.push(...pngs.filter(p=>{
+   const actual=p.split('/').pop().replace(/@\dx(?=\.png$)/i,'');
+   return actual.toLowerCase()===base.toLowerCase()+'.png';
+  }));
+ }
+
+ if(!candidates.length){
+  candidates=pngs.filter(p=>
+   /(app.?icon|^icon|icon[-_])/i.test(p.split('/').pop())
+  );
+ }
+
+ candidates=[...new Set(candidates)].sort((a,b)=>{
+  const sa=zip.files[a]._data?.uncompressedSize||0;
+  const sb=zip.files[b]._data?.uncompressedSize||0;
+  return sb-sa;
+ });
+
+ if(candidates.length){
+  const entry=zip.file(candidates[0]);
+  const base64=await entry.async('base64');
+  metadata.iconData='data:image/png;base64,'+base64;
+  metadata.iconNote='Icono extraído del IPA';
+ }else{
+  metadata.iconNote='El icono puede estar dentro de Assets.car';
+ }
+
  return metadata;
 }
 
+function make(tag,cls,text){
+ const e=document.createElement(tag);
+ if(cls)e.className=cls;
+ if(text!==undefined)e.textContent=text;
+ return e;
+}
+
 async function render(){
- const items=await getAll();
- items.sort((a,b)=>b.added-a.added);
- library.replaceChildren();
- $('count').textContent=`${items.length} archivo(s) · ${sizeText(items.reduce((n,x)=>n+x.size,0))} en total`;
+ const items=(await getAll()).sort((a,b)=>b.added-a.added);
+ const root=$('library');
+ root.replaceChildren();
+ $('count').textContent=`${items.length} aplicaciones · ${fmt(items.reduce((n,x)=>n+x.size,0))}`;
 
  for(const file of items){
-  const item=document.createElement('div');
-  item.className='item';
+  const card=make('div','card');
+  const icon=make('img','appicon');
+  icon.alt='Icono de '+file.name;
+  icon.src=file.metadata?.iconData||'data:image/svg+xml,'+encodeURIComponent(
+   '<svg xmlns="http://www.w3.org/2000/svg" width="68" height="68"><rect width="68" height="68" rx="15" fill="#292936"/><text x="34" y="43" font-size="30" text-anchor="middle" fill="#b9b0ff">IPA</text></svg>'
+  );
+  card.append(icon);
 
-  const title=document.createElement('strong');
-  title.textContent=file.name;
-  item.append(title);
+  const info=make('div','info');
+  info.append(make('div','name',file.metadata?.appName||file.name));
+  info.append(make('div','details',
+   `${file.name}\n${fmt(file.size)}\nVersión: ${file.metadata?.version||'Sin analizar'}`
+  ));
 
-  const size=document.createElement('p');
-  size.className='muted';
-  size.textContent=sizeText(file.size);
-  item.append(size);
-
-  if(file.metadata){
-   const m=document.createElement('div');
-   m.className='metadata';
-   for(const [label,value] of [
-    ['Aplicación',file.metadata.appName],
-    ['Versión',file.metadata.version],
-    ['Build',file.metadata.build],
-    ['Bundle ID',file.metadata.bundleId]
-   ]){
-    const line=document.createElement('div');
-    const strong=document.createElement('strong');
-    strong.textContent=label+': ';
-    line.append(strong,document.createTextNode(value));
-    m.append(line);
-   }
-   item.append(m);
-  }
-
-  const analyzeButton=document.createElement('button');
-  analyzeButton.className='secondary';
-  analyzeButton.textContent=file.metadata?'Volver a analizar':'Analizar IPA';
-  analyzeButton.addEventListener('click',async()=>{
-   analyzeButton.disabled=true;
-   analyzeButton.textContent='Analizando…';
-   status.textContent='Leyendo estructura del IPA…';
+  const actions=make('div','actions');
+  const analyzeBtn=make('button','',file.metadata?'Actualizar datos':'Analizar IPA');
+  analyzeBtn.addEventListener('click',async()=>{
+   analyzeBtn.disabled=true;
+   $('status').textContent='Analizando '+file.name+'…';
    try{
     const metadata=await analyze(file.blob);
-    const updated={...file,metadata};
-    await save(updated);
-    status.textContent='Análisis completado.';
+    await save({...file,metadata});
+    $('status').textContent=metadata.iconData?
+     'Análisis e icono completados.':
+     'Datos extraídos. '+metadata.iconNote+'.';
     await render();
    }catch(e){
-    status.textContent=e.message||'No se pudo analizar el archivo.';
-    analyzeButton.disabled=false;
-    analyzeButton.textContent='Reintentar análisis';
+    $('status').textContent=e.message||'No se pudo analizar el IPA.';
+    analyzeBtn.disabled=false;
    }
   });
-  item.append(analyzeButton);
 
-  const deleteButton=document.createElement('button');
-  deleteButton.className='secondary';
-  deleteButton.textContent='Eliminar archivo';
-  deleteButton.addEventListener('click',async()=>{
+  const detailsBtn=make('button','secondary','Detalles');
+  detailsBtn.addEventListener('click',()=>{
+   const m=file.metadata;
+   alert(m?
+    `Aplicación: ${m.appName}\nVersión: ${m.version}\nBuild: ${m.build}\nBundle ID: ${m.bundleId}\n${m.iconNote}`:
+    'Pulsa Analizar IPA para leer los detalles.');
+  });
+
+  const deleteBtn=make('button','secondary','Eliminar');
+  deleteBtn.addEventListener('click',async()=>{
    if(!confirm('¿Eliminar '+file.name+' de la biblioteca?'))return;
    await remove(file.id);
-   status.textContent='Archivo eliminado.';
+   $('status').textContent='Archivo eliminado.';
    await render();
   });
-  item.append(deleteButton);
-  library.append(item);
+
+  actions.append(analyzeBtn,detailsBtn,deleteBtn);
+  info.append(actions);
+  card.append(info);
+  root.append(card);
  }
 }
 
-picker.addEventListener('change',async()=>{
- let added=0,skipped=0;
- for(const file of Array.from(picker.files||[])){
-  if(!file.name.toLowerCase().endsWith('.ipa')){skipped++;continue;}
+$('files').addEventListener('change',async()=>{
+ let added=0;
+ for(const file of Array.from($('files').files||[])){
+  if(!file.name.toLowerCase().endsWith('.ipa'))continue;
+  const id=[file.name,file.size,file.lastModified].join('|');
+  if(await getOne(id))continue;
   try{
-   const id=[file.name,file.size,file.lastModified].join('|');
-   const existing=await requestResult(db.transaction('ipas','readonly').objectStore('ipas').get(id));
-   if(existing){continue;}
    await save({id,name:file.name,size:file.size,lastModified:file.lastModified,added:Date.now(),blob:file,metadata:null});
    added++;
   }catch(e){
-   status.textContent='Error guardando '+file.name+': '+e.message;
+   $('status').textContent='No se pudo guardar '+file.name+'. Comprueba el espacio disponible.';
   }
  }
- picker.value='';
+ $('files').value='';
  await render();
- status.textContent=`Importación finalizada. Nuevos: ${added}. Omitidos: ${skipped}.`;
+ $('status').textContent=`Importación terminada. Nuevos archivos: ${added}.`;
 });
 
 (async()=>{
  try{
   db=await openDB();
   await render();
-  status.textContent='Biblioteca local preparada.';
+  $('status').textContent='Biblioteca local preparada.';
  }catch(e){
-  status.textContent='Error iniciando la biblioteca: '+e.message;
+  $('status').textContent='Error de almacenamiento: '+e.message;
  }
 })();
 </script>
