@@ -2,138 +2,189 @@
 <!DOCTYPE html>
 <html lang="es">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport"
-        content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <meta name="theme-color" content="#111118">
-  <title>IPA Manager</title>
-  <style>
-    * { box-sizing: border-box; }
-    body {
-      margin: 0;
-      padding: 24px 18px;
-      padding-top: max(24px, env(safe-area-inset-top));
-      background: #111118;
-      color: #f5f5fa;
-      font: 16px -apple-system, BlinkMacSystemFont, sans-serif;
-    }
-    main { max-width: 600px; margin: auto; }
-    h1 { font-size: 29px; margin-bottom: 6px; }
-    .muted { color: #a4a4b5; }
-    .panel {
-      border: 1px solid #353543;
-      border-radius: 18px;
-      padding: 18px;
-      margin-top: 22px;
-      background: #1b1b25;
-    }
-    button, .picker {
-      display: block;
-      width: 100%;
-      border: 0;
-      border-radius: 12px;
-      padding: 15px;
-      background: #8b7cff;
-      color: #111118;
-      font-weight: 700;
-      text-align: center;
-      font-size: 16px;
-      cursor: pointer;
-    }
-    #files { display: none; }
-    .item {
-      border-top: 1px solid #353543;
-      padding: 15px 0;
-      overflow-wrap: anywhere;
-    }
-    .item button {
-      margin-top: 10px;
-      background: #343442;
-      color: white;
-      padding: 10px;
-    }
-    #status { margin-top: 14px; color: #c8c1ff; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#111118">
+<title>IPA Manager</title>
+<style>
+*{box-sizing:border-box}
+body{
+ margin:0;padding:24px 18px;
+ padding-top:max(24px,env(safe-area-inset-top));
+ background:#111118;color:#f5f5fa;
+ font:16px -apple-system,BlinkMacSystemFont,sans-serif
+}
+main{max-width:600px;margin:auto}
+h1{font-size:29px;margin-bottom:6px}
+.muted{color:#a4a4b5;overflow-wrap:anywhere}
+.panel{border:1px solid #353543;border-radius:18px;padding:18px;margin-top:22px;background:#1b1b25}
+.picker,button{
+ display:block;width:100%;border:0;border-radius:12px;
+ padding:15px;background:#8b7cff;color:#111118;
+ font-weight:700;text-align:center;font-size:16px;cursor:pointer
+}
+#files{display:none}
+.item{border-top:1px solid #353543;padding:15px 0;overflow-wrap:anywhere}
+.item button{margin-top:10px;background:#343442;color:white;padding:11px}
+#status{color:#c8c1ff;overflow-wrap:anywhere}
+</style>
 </head>
 <body>
 <main>
-  <h1>IPA Manager</h1>
-  <div class="muted">Tu biblioteca de aplicaciones iOS</div>
+<h1>IPA Manager</h1>
+<div class="muted">Tu biblioteca de aplicaciones iOS</div>
 
-  <section class="panel">
-    <h2>Importar IPA</h2>
-    <p class="muted">
-      Selecciona archivos .ipa desde la aplicación Archivos.
-    </p>
-    <label class="picker" for="files">＋ Seleccionar archivos</label>
-    <input id="files" type="file" accept=".ipa,application/octet-stream" multiple>
-    <p id="status" role="status">Biblioteca preparada.</p>
-  </section>
+<section class="panel">
+<h2>Importar IPA</h2>
+<p class="muted">Selecciona archivos .ipa desde Archivos.</p>
+<label class="picker" for="files">＋ Seleccionar archivos</label>
+<input id="files" type="file" accept=".ipa,application/octet-stream" multiple>
+<p id="status" role="status">Iniciando biblioteca…</p>
+</section>
 
-  <section class="panel">
-    <h2>Mi biblioteca</h2>
-    <p id="count" class="muted">0 archivos</p>
-    <div id="library"></div>
-  </section>
+<section class="panel">
+<h2>Mi biblioteca</h2>
+<p id="count" class="muted">Cargando…</p>
+<div id="library"></div>
+</section>
 </main>
 
 <script>
-  const picker = document.getElementById('files');
-  const library = document.getElementById('library');
-  const count = document.getElementById('count');
-  const status = document.getElementById('status');
-  const files = new Map();
+const picker=document.getElementById('files');
+const library=document.getElementById('library');
+const count=document.getElementById('count');
+const status=document.getElementById('status');
+let db;
 
-  function render() {
-    library.replaceChildren();
-    count.textContent =
-      `${files.size} archivo${files.size === 1 ? '' : 's'}`;
+function openDB(){
+ return new Promise((resolve,reject)=>{
+  const request=indexedDB.open('IPAManagerDB',1);
+  request.onupgradeneeded=()=>{
+   const database=request.result;
+   if(!database.objectStoreNames.contains('ipas')){
+    database.createObjectStore('ipas',{keyPath:'id'});
+   }
+  };
+  request.onsuccess=()=>resolve(request.result);
+  request.onerror=()=>reject(request.error);
+ });
+}
 
-    for (const [id, file] of files) {
-      const item = document.createElement('div');
-      item.className = 'item';
+function transaction(mode,action){
+ return new Promise((resolve,reject)=>{
+  const tx=db.transaction('ipas',mode);
+  const store=tx.objectStore('ipas');
+  let result;
+  try{result=action(store)}catch(e){reject(e);return}
+  tx.oncomplete=()=>resolve(result?.result);
+  tx.onerror=()=>reject(tx.error);
+  tx.onabort=()=>reject(tx.error||new Error('Operación cancelada'));
+ });
+}
 
-      const name = document.createElement('strong');
-      name.textContent = file.name;
+function getAll(){
+ return new Promise((resolve,reject)=>{
+  const tx=db.transaction('ipas','readonly');
+  const req=tx.objectStore('ipas').getAll();
+  req.onsuccess=()=>resolve(req.result);
+  req.onerror=()=>reject(req.error);
+ });
+}
 
-      const details = document.createElement('p');
-      details.className = 'muted';
-      details.textContent =
-        `${(file.size / 1024 / 1024).toFixed(2)} MB`;
+function save(item){
+ return transaction('readwrite',store=>store.put(item));
+}
 
-      const remove = document.createElement('button');
-      remove.textContent = 'Quitar de la lista';
-      remove.addEventListener('click', () => {
-        files.delete(id);
-        render();
-      });
+function remove(id){
+ return transaction('readwrite',store=>store.delete(id));
+}
 
-      item.append(name, details, remove);
-      library.append(item);
-    }
+function formatSize(bytes){
+ if(bytes<1024*1024)return (bytes/1024).toFixed(1)+' KB';
+ return (bytes/1024/1024).toFixed(2)+' MB';
+}
+
+async function render(){
+ const items=await getAll();
+ items.sort((a,b)=>b.added-a.added);
+ library.replaceChildren();
+ count.textContent=`${items.length} archivo${items.length===1?'':'s'} · ${formatSize(items.reduce((n,x)=>n+x.size,0))} en total`;
+
+ for(const file of items){
+  const item=document.createElement('div');
+  item.className='item';
+
+  const name=document.createElement('strong');
+  name.textContent=file.name;
+
+  const details=document.createElement('p');
+  details.className='muted';
+  details.textContent=`${formatSize(file.size)} · Guardado en este dispositivo`;
+
+  const removeButton=document.createElement('button');
+  removeButton.textContent='Eliminar archivo';
+  removeButton.addEventListener('click',async()=>{
+   if(!confirm(`¿Eliminar ${file.name} de la biblioteca?`))return;
+   try{
+    await remove(file.id);
+    status.textContent='Archivo eliminado de la biblioteca.';
+    await render();
+   }catch(e){
+    status.textContent='No se pudo eliminar el archivo.';
+   }
+  });
+
+  item.append(name,details,removeButton);
+  library.append(item);
+ }
+}
+
+picker.addEventListener('change',async()=>{
+ const selected=Array.from(picker.files||[]);
+ if(!selected.length)return;
+ let added=0,skipped=0,failed=0;
+
+ status.textContent='Guardando archivos…';
+
+ for(const file of selected){
+  if(!file.name.toLowerCase().endsWith('.ipa')){
+   skipped++;continue;
   }
 
-  picker.addEventListener('change', () => {
-    let added = 0;
+  try{
+   const id=[file.name,file.size,file.lastModified].join('|');
+   await save({
+    id,
+    name:file.name,
+    size:file.size,
+    lastModified:file.lastModified,
+    added:Date.now(),
+    blob:file
+   });
+   added++;
+  }catch(e){
+   failed++;
+  }
+ }
 
-    for (const file of picker.files) {
-      if (!file.name.toLowerCase().endsWith('.ipa')) continue;
+ picker.value='';
+ try{await render()}catch(e){}
+ status.textContent=
+  `${added} guardado(s). ${skipped} omitido(s). ${failed} error(es).`;
+});
 
-      const id = `${file.name}:${file.size}:${file.lastModified}`;
-
-      if (!files.has(id)) {
-        files.set(id, file);
-        added++;
-      }
-    }
-
-    status.textContent = added
-      ? `${added} archivo(s) importado(s) a la lista.`
-      : 'No se añadieron archivos IPA nuevos.';
-
-    picker.value = '';
-    render();
-  });
+(async()=>{
+ try{
+  if(!('indexedDB' in window))throw new Error('IndexedDB no disponible');
+  db=await openDB();
+  await render();
+  status.textContent='Biblioteca local preparada.';
+ }catch(e){
+  status.textContent='No se pudo iniciar el almacenamiento. Prueba a abrir la página en Safari.';
+  console.error(e);
+ }
+})();
 </script>
 </body>
 </html>
+
