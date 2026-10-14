@@ -204,6 +204,30 @@ async function analyze(file){
   metadata.iconNote='El icono puede estar dentro de Assets.car';
  }
 
+ // Analizar archivos relacionados con la firma del IPA
+ const signatureFiles = Object.keys(zip.files).filter(path =>
+  /(^|\/)embedded\.mobileprovision$/i.test(path) ||
+  /(^|\/)_CodeSignature\/CodeResources$/i.test(path)
+ );
+
+ metadata.signatureFiles = signatureFiles;
+ metadata.hasProvisioningProfile = signatureFiles.some(path =>
+  /(^|\/)embedded\.mobileprovision$/i.test(path)
+ );
+ metadata.hasCodeResources = signatureFiles.some(path =>
+  /(^|\/)_CodeSignature\/CodeResources$/i.test(path)
+ );
+
+ if (metadata.hasProvisioningProfile && metadata.hasCodeResources) {
+  metadata.signatureNote = 'Se encontraron el perfil y los recursos de firma';
+ } else if (metadata.hasProvisioningProfile) {
+  metadata.signatureNote = 'Perfil de aprovisionamiento encontrado';
+ } else if (metadata.hasCodeResources) {
+  metadata.signatureNote = 'Recursos de firma encontrados; falta comprobar el perfil';
+ } else {
+  metadata.signatureNote = 'No se encontraron los archivos de firma habituales';
+ }
+
  return metadata;
 }
 
