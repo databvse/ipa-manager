@@ -1,0 +1,139 @@
+
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#111118">
+  <title>IPA Manager</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      padding: 24px 18px;
+      padding-top: max(24px, env(safe-area-inset-top));
+      background: #111118;
+      color: #f5f5fa;
+      font: 16px -apple-system, BlinkMacSystemFont, sans-serif;
+    }
+    main { max-width: 600px; margin: auto; }
+    h1 { font-size: 29px; margin-bottom: 6px; }
+    .muted { color: #a4a4b5; }
+    .panel {
+      border: 1px solid #353543;
+      border-radius: 18px;
+      padding: 18px;
+      margin-top: 22px;
+      background: #1b1b25;
+    }
+    button, .picker {
+      display: block;
+      width: 100%;
+      border: 0;
+      border-radius: 12px;
+      padding: 15px;
+      background: #8b7cff;
+      color: #111118;
+      font-weight: 700;
+      text-align: center;
+      font-size: 16px;
+      cursor: pointer;
+    }
+    #files { display: none; }
+    .item {
+      border-top: 1px solid #353543;
+      padding: 15px 0;
+      overflow-wrap: anywhere;
+    }
+    .item button {
+      margin-top: 10px;
+      background: #343442;
+      color: white;
+      padding: 10px;
+    }
+    #status { margin-top: 14px; color: #c8c1ff; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>IPA Manager</h1>
+  <div class="muted">Tu biblioteca de aplicaciones iOS</div>
+
+  <section class="panel">
+    <h2>Importar IPA</h2>
+    <p class="muted">
+      Selecciona archivos .ipa desde la aplicación Archivos.
+    </p>
+    <label class="picker" for="files">＋ Seleccionar archivos</label>
+    <input id="files" type="file" accept=".ipa,application/octet-stream" multiple>
+    <p id="status" role="status">Biblioteca preparada.</p>
+  </section>
+
+  <section class="panel">
+    <h2>Mi biblioteca</h2>
+    <p id="count" class="muted">0 archivos</p>
+    <div id="library"></div>
+  </section>
+</main>
+
+<script>
+  const picker = document.getElementById('files');
+  const library = document.getElementById('library');
+  const count = document.getElementById('count');
+  const status = document.getElementById('status');
+  const files = new Map();
+
+  function render() {
+    library.replaceChildren();
+    count.textContent =
+      `${files.size} archivo${files.size === 1 ? '' : 's'}`;
+
+    for (const [id, file] of files) {
+      const item = document.createElement('div');
+      item.className = 'item';
+
+      const name = document.createElement('strong');
+      name.textContent = file.name;
+
+      const details = document.createElement('p');
+      details.className = 'muted';
+      details.textContent =
+        `${(file.size / 1024 / 1024).toFixed(2)} MB`;
+
+      const remove = document.createElement('button');
+      remove.textContent = 'Quitar de la lista';
+      remove.addEventListener('click', () => {
+        files.delete(id);
+        render();
+      });
+
+      item.append(name, details, remove);
+      library.append(item);
+    }
+  }
+
+  picker.addEventListener('change', () => {
+    let added = 0;
+
+    for (const file of picker.files) {
+      if (!file.name.toLowerCase().endsWith('.ipa')) continue;
+
+      const id = `${file.name}:${file.size}:${file.lastModified}`;
+
+      if (!files.has(id)) {
+        files.set(id, file);
+        added++;
+      }
+    }
+
+    status.textContent = added
+      ? `${added} archivo(s) importado(s) a la lista.`
+      : 'No se añadieron archivos IPA nuevos.';
+
+    picker.value = '';
+    render();
+  });
+</script>
+</body>
+</html>
